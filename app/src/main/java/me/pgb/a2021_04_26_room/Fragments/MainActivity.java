@@ -1,10 +1,7 @@
-package me.pgb.a2021_04_26_room;
+package me.pgb.a2021_04_26_room.Fragments;
 
-import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
-
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
@@ -15,18 +12,24 @@ import io.reactivex.Observable;
 import io.reactivex.annotations.NonNull;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.schedulers.Schedulers;
+import me.pgb.a2021_04_26_room.Alerts.AlreadyInDatabase;
+import me.pgb.a2021_04_26_room.Alerts.NotInDatabase;
+import me.pgb.a2021_04_26_room.Alerts.stockUpdated;
+import me.pgb.a2021_04_26_room.PortfolioViewModel;
+import me.pgb.a2021_04_26_room.R;
 import me.pgb.a2021_04_26_room.db.DatabaseOperations;
 import me.pgb.a2021_04_26_room.db.Stock;
 
 import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -34,10 +37,14 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "_MainActivity_";
     private Button addStockButton;
     private Button getAllStocksButton;
+    private Button deleteStockButton;
+    private Button findStockButton;
+    private Button updateStockButton;
     private EditText nameEditText;
     private EditText priceEditText;
     private PortfolioViewModel portfolioViewModel;
     private LiveData<List<Stock>> allStocks;
+    private TextView storedPrice;
 
     private Observable<Stock> observable;
 
@@ -49,8 +56,12 @@ public class MainActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         addStockButton = findViewById(R.id.insert_stock_button);
-        getAllStocksButton = findViewById(R.id.get_all_stocks_button);
+        getAllStocksButton = findViewById(R.id.get_all_stock_button);
+        deleteStockButton = findViewById(R.id.delete_stock_button);
+        findStockButton = findViewById(R.id.find_stock_button);
+        updateStockButton = findViewById(R.id.update_button);
         nameEditText = findViewById(R.id.name_text_view);
+        priceEditText = findViewById(R.id.price_text_view);
 
         portfolioViewModel = new ViewModelProvider(this).get(PortfolioViewModel.class);
         allStocks = portfolioViewModel.getAllStocks();
@@ -71,7 +82,9 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 String name = nameEditText.getText().toString();
-                Stock stock = new Stock(name, 0.9);
+                String price = priceEditText.getText().toString();
+                Stock stock = new Stock(name, Double.parseDouble(price));
+
 
 
                 if (isStockInDatabase_faster(stock.name)) {
@@ -82,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
                 stock.databaseOperations = DatabaseOperations.INSERT;
                 observable = io.reactivex.Observable.just(stock);
                 io.reactivex.Observer<Stock> observer = getStockObserver(stock);
+                Toast.makeText(getBaseContext(), "Stock Inserted", Toast.LENGTH_SHORT).show();
 
                 observable
                         .observeOn(Schedulers.io())
@@ -90,14 +104,94 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        deleteStockButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String name = nameEditText.getText().toString();
+
+
+                if (!isStockInDatabase_faster(name)) {
+                    notInDataBaseAlert();
+                    return;
+                }
+                for (Stock stock : allStocks.getValue()) {
+                    if (name.equals(stock.name)) {
+                        stock.databaseOperations = DatabaseOperations.DELETE;
+                        observable = io.reactivex.Observable.just(stock);
+                        io.reactivex.Observer<Stock> observer = getStockObserver(stock);
+                        observable
+                                .observeOn(Schedulers.io())
+                                .subscribe(observer);                    }
+                }
+                Toast.makeText(getBaseContext(), "Stock Deleted", Toast.LENGTH_SHORT).show();
+
+
+            }
+        });
+
+
+        updateStockButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String name = nameEditText.getText().toString();
+                String price = priceEditText.getText().toString();
+                Stock stock = new Stock(name, Double.parseDouble(price));
+                Toast.makeText(getBaseContext(), "CLICK", Toast.LENGTH_SHORT).show();
+
+
+
+                if (!isStockInDatabase_faster(stock.name)) {
+                    notInDataBaseAlert();
+                    return;
+                }
+
+                stock.databaseOperations = DatabaseOperations.UPDATE;
+                observable = io.reactivex.Observable.just(stock);
+                io.reactivex.Observer<Stock> observer = getStockObserver(stock);
+                stockUpdatedAlert();
+                observable
+                        .observeOn(Schedulers.io())
+                        .subscribe(observer);
+
+            }
+        });
+
+
+        findStockButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String name = nameEditText.getText().toString();
+                if (!isStockInDatabase_faster(name)) {
+                    notInDataBaseAlert();
+                    return;
+                }
+                Double value = 0.0;
+                for (Stock stock : allStocks.getValue()) {
+                    if (name.equals(stock.name)) {
+                        value = stock.price;
+                        //storedPrice.setText(value.toString());
+                                    }
+                }
+
+                Intent intent = new Intent(MainActivity.this, FindStockActivity.class);
+                intent.putExtra("stock", nameEditText.getText().toString());
+                intent.putExtra("price", value);
+
+                startActivity(intent);
+                MainActivity.this.finish();
+            }
+        });
+
         getAllStocksButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 listAll();
+                displayAll();
             }
         });
 
     }
+
 
     /*
      * Try in UI thread...:-(
@@ -111,7 +205,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isStockInDatabase_faster(String name) {
+    public boolean isStockInDatabase_faster(String name) {
         boolean inDB = false;
         for (Stock stock : allStocks.getValue()) {
             if (name.equals(stock.name)) {
@@ -129,12 +223,27 @@ public class MainActivity extends AppCompatActivity {
     private void inDataBaseAlert() {
         new AlreadyInDatabase().show(getSupportFragmentManager(),TAG);
     }
-
+    private void stockUpdatedAlert() {
+        new stockUpdated().show(getSupportFragmentManager(),TAG);
+    }
+    private void notInDataBaseAlert() {
+        new NotInDatabase().show(getSupportFragmentManager(),TAG);
+    }
     private void listAll() {
         Log.i(TAG, "allStocks size: " + allStocks.getValue().size());
         for (Stock stock : allStocks.getValue()) {
             Log.i(TAG, "Stock: " + stock.name);
         }
+    }
+    private void displayAll(){
+        String allStc = "";
+        for (Stock stock : allStocks.getValue()){
+            Double val = stock.price;
+            allStc = allStc + stock.name + " : " + val.toString() + "\n";
+
+        }
+        Toast.makeText(getBaseContext(), allStc, Toast.LENGTH_LONG).show();
+
     }
 
     private io.reactivex.Observer<Stock> getStockObserver(Stock stock) { // OBSERVER
@@ -154,9 +263,13 @@ public class MainActivity extends AppCompatActivity {
                         break;
                     case DELETE:
                         portfolioViewModel.getPortfolioDatabase().stockDao().delete(stock);
+
                         break;
                     case UPDATE:
                         Log.i(TAG, "Update");
+                        if (isStockInDatabase(stock.name)) {
+                            portfolioViewModel.getPortfolioDatabase().stockDao().update(stock);
+                        }
                         break;
                     default:
                         Log.i(TAG, "Default");
